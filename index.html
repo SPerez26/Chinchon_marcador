@@ -67,16 +67,8 @@
   .muted{color:var(--muted)}
   .section-title{font-weight:700; margin:4px 0 12px 0; font-size:1.05rem}
   .grid{display:grid; gap:8px}
-  .grid.cols-2{grid-template-columns:1fr 1fr}
   .grid.cols-3{grid-template-columns:repeat(3,1fr)}
   @media (max-width:640px){ .grid.cols-3{grid-template-columns:1fr} }
-  table{width:100%; border-collapse:separate; border-spacing:0 8px}
-  th, td{padding:10px 12px; text-align:left}
-  thead th{color:var(--muted); font-weight:600; font-size:.9rem}
-  tbody tr{background:rgba(255,255,255,.02); border:1px solid var(--border)}
-  tbody tr td{border-top:1px solid var(--border); border-bottom:1px solid var(--border)}
-  tbody tr td:first-child{border-left:1px solid var(--border); border-top-left-radius:10px; border-bottom-left-radius:10px}
-  tbody tr td:last-child{border-right:1px solid var(--border); border-top-right-radius:10px; border-bottom-right-radius:10px}
   .totals{display:grid; gap:8px; grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
   .card{
     background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; box-shadow:var(--shadow);
@@ -96,7 +88,9 @@
   .round:hover{background:rgba(255,255,255,.03)}
   .mini{font-size:.85rem}
   .hidden{display:none !important}
-  .inline-input{width:90px}
+  /* Input + sign button */
+  .input-sign{display:flex; gap:8px; align-items:center}
+  .btn-sign{padding:12px; min-width:52px}
 </style>
 </head>
 <body>
@@ -165,7 +159,7 @@
   </section>
 
   <footer class="footer muted mini">
-    <div>Consejo: toca una ronda del historial para <strong>editar</strong> sus puntuaciones. Soporta <strong>valores negativos</strong> (p. ej., -10).</div>
+    <div>Consejo: toca una ronda del historial para <strong>editar</strong>. Usa el botón <strong>±</strong> para introducir valores negativos.</div>
     <div><a class="link" href="#" id="helpLink">¿Cómo se usa?</a></div>
   </footer>
 </div>
@@ -175,7 +169,7 @@
   <h3>Cómo usar el marcador</h3>
   <ul>
     <li>Añade jugadores y pulsa <em>Empezar partida</em>.</li>
-    <li>Escribe los puntos de cada jugador (admite <strong>negativos</strong>, p. ej. <code>-5</code>) en <em>Ronda en curso</em> y pulsa <em>Cerrar ronda</em>.</li>
+    <li>Escribe los puntos (solo <strong>enteros</strong>). Para negativos, toca <strong>±</strong>.</li>
     <li>Los totales se actualizan automáticamente (menor puntuación = mejor).</li>
     <li>Puedes <strong>deshacer</strong> la última ronda o <strong>tocar</strong> cualquier ronda del historial para editarla.</li>
     <li>Usa <em>Exportar</em>/<em>Importar</em> para guardar/cargar partidas en archivo.</li>
@@ -192,9 +186,9 @@
 
   // --- Estado ---
   let state = {
-    players: [],        // [{id, name, alive:true}]
+    players: [],
     limit: 100,
-    rounds: []          // [{id, scores:{playerId: number}, ts}]
+    rounds: []
   };
 
   const STORAGE_KEY = "chinchon_scoreboard_v1";
@@ -204,7 +198,7 @@
   const fmt = (n) => Number.isFinite(n) ? n.toString() : "";
   const nowIso = () => new Date().toISOString();
 
-  // Acepta enteros negativos y positivos, vacío -> 0, inválido -> 0
+  // Acepta enteros con signo opcional; vacío/invalid -> 0
   const parseScore = (v) => {
     if (v === null || v === undefined) return 0;
     const s = String(v).trim();
@@ -214,10 +208,22 @@
     return Number.isFinite(n) ? n : 0;
   };
 
-  const save = () => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  // Sanitiza mientras se escribe: deja solo "-" inicial y dígitos
+  const sanitizeIntegerInput = (raw) => {
+    const s = String(raw);
+    // Quita todo salvo dígitos y guiones
+    let cleaned = s.replace(/[^0-9-]/g, "");
+    // Si hay varios "-", deja solo el primero y al inicio
+    cleaned = cleaned.replace(/-/g, (m, i) => i === 0 ? "-" : "");
+    if (cleaned !== "" && cleaned !== "-" && !/^-?\d*$/.test(cleaned)) {
+      // Como red de seguridad, filtra dejando solo el primer "-" y los dígitos
+      const sign = cleaned.startsWith("-") ? "-" : "";
+      cleaned = sign + cleaned.replace(/-/g, "").replace(/\D/g, "");
+    }
+    return cleaned;
   };
 
+  const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   const load = () => {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -270,10 +276,56 @@
       row.innerHTML = `
         <div class="grow">
           <label class="tag">${escapeHtml(p.name)}</label>
-          <input type="text" inputmode="decimal" pattern="-?[0-9]*" class="score-input" data-p="${p.id}" placeholder="Puntos de la ronda (ej. -10, 0, 25)" />
+          <div class="input-sign">
+            <input type="text" inputmode="numeric" enterkeyhint="done"
+                   class="score-input" data-p="${p.id}"
+                   placeholder="Puntos (usa ± para negativos)"
+                   aria-label="Puntos de ${escapeHtml(p.name)}" />
+            <button type="button" class="ghost btn-sign" data-sign="${p.id}" aria-label="Alternar signo">±</button>
+          </div>
         </div>
       `;
       box.appendChild(row);
+    });
+
+    // Wiring de sanitización e ±
+    $$("#inputs .score-input").forEach(inp => {
+      inp.addEventListener("input", () => {
+        const caret = inp.selectionStart;
+        const before = inp.value;
+        inp.value = sanitizeIntegerInput(before);
+        // Mejor esfuerzo por mantener el cursor
+        const delta = before.length - inp.value.length;
+        try { inp.setSelectionRange(Math.max(0, caret - delta), Math.max(0, caret - delta)); } catch {}
+      });
+      inp.addEventListener("blur", () => {
+        // Si quedó solo '-', convertir a 0
+        if (inp.value.trim() === "-") inp.value = "0";
+      });
+      inp.addEventListener("paste", (e) => {
+        e.preventDefault();
+        const text = (e.clipboardData || window.clipboardData).getData("text");
+        const cleaned = sanitizeIntegerInput(text);
+        document.execCommand("insertText", false, cleaned);
+      });
+    });
+
+    $$("#inputs .btn-sign").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const pid = btn.getAttribute("data-sign");
+        const inp = $(`.score-input[data-p="${pid}"]`);
+        if (!inp) return;
+        const v = inp.value.trim();
+        if (v.startsWith("-")) {
+          inp.value = v.slice(1); // quita signo
+        } else if (v === "" || v === "0") {
+          inp.value = "-0"; // deja claro el negativo si luego se escribe
+        } else {
+          inp.value = "-" + v;
+        }
+        inp.dispatchEvent(new Event("input")); // re-sanitiza por si acaso
+        inp.focus();
+      });
     });
   };
 
@@ -370,7 +422,7 @@
     if (allZero){
       if(!confirm("Todos los valores son 0. ¿Cerrar la ronda igualmente?")) return;
     }
-    state.rounds.push({id: Math.random().toString(36).slice(2,9), scores, ts: new Date().toISOString()});
+    state.rounds.push({id: uid(), scores, ts: nowIso()});
     save();
     clearInputs();
     renderAll();
@@ -417,7 +469,7 @@
         newScores[pid] = parseScore(inp.value);
       });
       r.scores = newScores;
-      r.ts = new Date().toISOString();
+      r.ts = nowIso();
       save();
       cleanup();
       renderAll();
@@ -484,9 +536,9 @@
         const obj = JSON.parse(reader.result);
         if (!Array.isArray(obj.players) || !Array.isArray(obj.rounds)) throw new Error("Estructura no válida");
         state = {
-          players: obj.players.map(p => ({id: p.id || Math.random().toString(36).slice(2,9), name: String(p.name || "").slice(0,40)})),
+          players: obj.players.map(p => ({id: p.id || uid(), name: String(p.name || "").slice(0,40)})),
           limit: Number.parseInt(obj.limit, 10) || 100,
-          rounds: Array.isArray(obj.rounds) ? obj.rounds.map(r => ({id: r.id || Math.random().toString(36).slice(2,9), scores: r.scores || {}, ts: r.ts || new Date().toISOString()})) : []
+          rounds: Array.isArray(obj.rounds) ? obj.rounds.map(r => ({id: r.id || uid(), scores: r.scores || {}, ts: r.ts || nowIso()})) : []
         };
         save();
         $("#setup").classList.add("hidden");
@@ -508,7 +560,7 @@
       alert("Ese nombre ya está en la lista.");
       return;
     }
-    state.players.push({id: Math.random().toString(36).slice(2,9), name, alive: true});
+    state.players.push({id: uid(), name, alive: true});
     $("#playerName").value = "";
     renderPlayersChips();
   });
@@ -531,9 +583,9 @@
 
   $("#sampleBtn").addEventListener("click", () => {
     state.players = [
-      {id: Math.random().toString(36).slice(2,9), name: "Ana"},
-      {id: Math.random().toString(36).slice(2,9), name: "Luis"},
-      {id: Math.random().toString(36).slice(2,9), name: "Marta"}
+      {id: uid(), name: "Ana"},
+      {id: uid(), name: "Luis"},
+      {id: uid(), name: "Marta"}
     ];
     renderPlayersChips();
   });
@@ -564,6 +616,7 @@
     $("#help").showModal();
   });
 
+  // Rehidrata si había una partida en curso
   const existing = load();
   if (existing && existing.players?.length){
     state = existing;
