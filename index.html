@@ -165,7 +165,7 @@
   </section>
 
   <footer class="footer muted mini">
-    <div>Consejo: toca una ronda del historial para <strong>editar</strong> sus puntuaciones.</div>
+    <div>Consejo: toca una ronda del historial para <strong>editar</strong> sus puntuaciones. Soporta <strong>valores negativos</strong> (p. ej., -10).</div>
     <div><a class="link" href="#" id="helpLink">¿Cómo se usa?</a></div>
   </footer>
 </div>
@@ -175,7 +175,7 @@
   <h3>Cómo usar el marcador</h3>
   <ul>
     <li>Añade jugadores y pulsa <em>Empezar partida</em>.</li>
-    <li>Escribe los puntos de cada jugador en la sección <em>Ronda en curso</em> y pulsa <em>Cerrar ronda</em>.</li>
+    <li>Escribe los puntos de cada jugador (admite <strong>negativos</strong>, p. ej. <code>-5</code>) en <em>Ronda en curso</em> y pulsa <em>Cerrar ronda</em>.</li>
     <li>Los totales se actualizan automáticamente (menor puntuación = mejor).</li>
     <li>Puedes <strong>deshacer</strong> la última ronda o <strong>tocar</strong> cualquier ronda del historial para editarla.</li>
     <li>Usa <em>Exportar</em>/<em>Importar</em> para guardar/cargar partidas en archivo.</li>
@@ -203,9 +203,14 @@
   const uid = () => Math.random().toString(36).slice(2, 9);
   const fmt = (n) => Number.isFinite(n) ? n.toString() : "";
   const nowIso = () => new Date().toISOString();
-  const clampInt = (v) => {
-    if (v === "" || v === null || v === undefined) return 0;
-    const n = parseInt(v, 10);
+
+  // Acepta enteros negativos y positivos, vacío -> 0, inválido -> 0
+  const parseScore = (v) => {
+    if (v === null || v === undefined) return 0;
+    const s = String(v).trim();
+    if (s === "") return 0;
+    if (!/^-?\d+$/.test(s)) return 0;
+    const n = Number.parseInt(s, 10);
     return Number.isFinite(n) ? n : 0;
   };
 
@@ -248,7 +253,7 @@
       alert("Añade al menos 2 jugadores.");
       return;
     }
-    state.limit = Math.max(10, clampInt($("#limit").value));
+    state.limit = Math.max(10, Number.parseInt($("#limit").value, 10) || 100);
     save();
     $("#setup").classList.add("hidden");
     $("#board").classList.remove("hidden");
@@ -259,13 +264,13 @@
   const buildInputs = () => {
     const box = $("#inputs");
     box.innerHTML = "";
-    state.players.forEach((p, i) => {
+    state.players.forEach((p) => {
       const row = document.createElement("div");
       row.className = "row";
       row.innerHTML = `
         <div class="grow">
           <label class="tag">${escapeHtml(p.name)}</label>
-          <input type="number" inputmode="numeric" class="score-input" data-p="${p.id}" placeholder="Puntos de la ronda" />
+          <input type="text" inputmode="decimal" pattern="-?[0-9]*" class="score-input" data-p="${p.id}" placeholder="Puntos de la ronda (ej. -10, 0, 25)" />
         </div>
       `;
       box.appendChild(row);
@@ -276,7 +281,8 @@
     const totals = Object.fromEntries(state.players.map(p => [p.id, 0]));
     state.rounds.forEach(r => {
       for (const pid in r.scores){
-        totals[pid] = (totals[pid] || 0) + clampInt(r.scores[pid]);
+        const v = parseScore(r.scores[pid]);
+        totals[pid] = (totals[pid] || 0) + v;
       }
     });
     return totals;
@@ -288,8 +294,8 @@
     const list = state.players.map(p => ({
       id: p.id,
       name: p.name,
-      total: totals[p.id] || 0,
-      eliminated: (totals[p.id] || 0) >= limit
+      total: totals[p.id] ?? 0,
+      eliminated: (totals[p.id] ?? 0) >= limit
     }));
     list.sort((a,b)=> a.total - b.total);
 
@@ -319,11 +325,10 @@
       wrap.appendChild(p);
       return;
     }
-    const totals = currentTotals();
     state.rounds.forEach((r, idx) => {
       const row = document.createElement("div");
       row.className = "round";
-      const parts = state.players.map(p => `${p.name}: ${fmt(r.scores[p.id] ?? 0)}`);
+      const parts = state.players.map(p => `${p.name}: ${fmt(parseScore(r.scores[p.id] ?? 0))}`);
       const dt = new Date(r.ts);
       row.innerHTML = `
         <div>
@@ -338,7 +343,6 @@
       wrap.appendChild(row);
     });
 
-    // Attach handlers
     $$("#rounds [data-edit]").forEach(btn => {
       btn.addEventListener("click", () => editRound(btn.getAttribute("data-edit")));
     });
@@ -357,18 +361,16 @@
   };
 
   const commitRound = () => {
-    // Build scores from inputs
     const scores = {};
     $$("#inputs .score-input").forEach(inp => {
       const pid = inp.getAttribute("data-p");
-      scores[pid] = clampInt(inp.value);
+      scores[pid] = parseScore(inp.value);
     });
-    // Avoid empty round
-    const allZero = Object.values(scores).every(v => clampInt(v) === 0);
+    const allZero = Object.values(scores).every(v => parseScore(v) === 0);
     if (allZero){
       if(!confirm("Todos los valores son 0. ¿Cerrar la ronda igualmente?")) return;
     }
-    state.rounds.push({id: uid(), scores, ts: nowIso()});
+    state.rounds.push({id: Math.random().toString(36).slice(2,9), scores, ts: new Date().toISOString()});
     save();
     clearInputs();
     renderAll();
@@ -384,12 +386,10 @@
   const editRound = (id) => {
     const r = state.rounds.find(rr => rr.id === id);
     if (!r) return;
-    // Fill inputs with round values to edit
     $$("#inputs .score-input").forEach(inp => {
       const pid = inp.getAttribute("data-p");
-      inp.value = fmt(r.scores[pid] ?? 0);
+      inp.value = String(parseScore(r.scores[pid] ?? 0));
     });
-    // Replace commit by save edit
     $("#commitBtn").classList.add("hidden");
     $("#clearBtn").classList.add("hidden");
     const saveBtn = document.createElement("button");
@@ -414,10 +414,10 @@
       const newScores = {};
       $$("#inputs .score-input").forEach(inp => {
         const pid = inp.getAttribute("data-p");
-        newScores[pid] = clampInt(inp.value);
+        newScores[pid] = parseScore(inp.value);
       });
       r.scores = newScores;
-      r.ts = nowIso();
+      r.ts = new Date().toISOString();
       save();
       cleanup();
       renderAll();
@@ -433,7 +433,6 @@
   };
 
   const exportCSV = () => {
-    // CSV with header: Jugador, Ronda1, Ronda2, ..., Total
     const roundsCount = state.rounds.length;
     const headers = ["Jugador"];
     for (let i=0;i<roundsCount;i++) headers.push(`Ronda ${i+1}`);
@@ -444,7 +443,7 @@
       const rec = [csvEscape(p.name)];
       for (let i=0;i<roundsCount;i++){
         const r = state.rounds[i];
-        rec.push(csvEscape(fmt(r.scores[p.id] ?? 0)));
+        rec.push(csvEscape(fmt(parseScore(r.scores[p.id] ?? 0))));
       }
       rec.push(csvEscape(fmt(totals[p.id] ?? 0)));
       rows.push(rec.join(","));
@@ -485,9 +484,9 @@
         const obj = JSON.parse(reader.result);
         if (!Array.isArray(obj.players) || !Array.isArray(obj.rounds)) throw new Error("Estructura no válida");
         state = {
-          players: obj.players.map(p => ({id: p.id || uid(), name: String(p.name || "").slice(0,40)})),
-          limit: clampInt(obj.limit) || 100,
-          rounds: Array.isArray(obj.rounds) ? obj.rounds.map(r => ({id: r.id || uid(), scores: r.scores || {}, ts: r.ts || nowIso()})) : []
+          players: obj.players.map(p => ({id: p.id || Math.random().toString(36).slice(2,9), name: String(p.name || "").slice(0,40)})),
+          limit: Number.parseInt(obj.limit, 10) || 100,
+          rounds: Array.isArray(obj.rounds) ? obj.rounds.map(r => ({id: r.id || Math.random().toString(36).slice(2,9), scores: r.scores || {}, ts: r.ts || new Date().toISOString()})) : []
         };
         save();
         $("#setup").classList.add("hidden");
@@ -509,7 +508,7 @@
       alert("Ese nombre ya está en la lista.");
       return;
     }
-    state.players.push({id: uid(), name, alive: true});
+    state.players.push({id: Math.random().toString(36).slice(2,9), name, alive: true});
     $("#playerName").value = "";
     renderPlayersChips();
   });
@@ -532,9 +531,9 @@
 
   $("#sampleBtn").addEventListener("click", () => {
     state.players = [
-      {id: uid(), name: "Ana"},
-      {id: uid(), name: "Luis"},
-      {id: uid(), name: "Marta"}
+      {id: Math.random().toString(36).slice(2,9), name: "Ana"},
+      {id: Math.random().toString(36).slice(2,9), name: "Luis"},
+      {id: Math.random().toString(36).slice(2,9), name: "Marta"}
     ];
     renderPlayersChips();
   });
@@ -565,7 +564,6 @@
     $("#help").showModal();
   });
 
-  // Intento cargar estado por si el usuario recarga en medio de la partida
   const existing = load();
   if (existing && existing.players?.length){
     state = existing;
