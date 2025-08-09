@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Marcador Chinchón</title>
+<meta name="description" content="Marcador simple para partidas de Chinchón. Sin instalación, funciona en el navegador y guarda tu partida en este dispositivo.">
+<style>
+  :root{
+    --bg: #0b0d10;
+    --panel: #141820;
+    --accent: #4ea1ff;
+    --text: #e9eef6;
+    --muted: #9fb0c3;
+    --danger: #ff6b6b;
+    --ok: #51cf66;
+    --border: #212837;
+    --shadow: 0 6px 24px rgba(0,0,0,.25);
+    --radius: 14px;
+    --radius-sm: 10px;
+    --radius-xs: 8px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg:#f5f7fb;
+      --panel:#ffffff;
+      --text:#1c2430;
+      --muted:#546071;
+      --border:#e8edf4;
+      --shadow: 0 6px 24px rgba(0,0,0,.08);
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    background:linear-gradient(180deg, var(--bg), #0c121b);
+    color:var(--text);
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .wrap{max-width:980px; margin:0 auto; padding:18px; display:flex; flex-direction:column; gap:16px}
+  header{display:flex; align-items:center; justify-content:space-between; gap:12px}
+  h1{font-size:1.4rem; margin:0; letter-spacing:.2px}
+  .pill{padding:6px 10px; border:1px solid var(--border); border-radius:999px; color:var(--muted); font-size:.85rem}
+  .panel{background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:14px}
+  .row{display:flex; gap:10px; flex-wrap:wrap}
+  .grow{flex:1}
+  input[type="text"], input[type="number"]{
+    width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--border);
+    background:transparent; color:var(--text); outline:none; font-size:1rem;
+  }
+  input::placeholder{color:var(--muted)}
+  button{
+    appearance:none; border:none; cursor:pointer; padding:12px 14px; border-radius:12px;
+    background:var(--accent); color:white; font-weight:600; font-size:1rem; box-shadow:var(--shadow);
+  }
+  button.ghost{background:transparent; color:var(--text); border:1px solid var(--border)}
+  button.warn{background:var(--danger)}
+  button.ok{background:var(--ok); color:#07210e}
+  button:disabled{opacity:.5; cursor:not-allowed}
+  .players-list{display:flex; gap:10px; flex-wrap:wrap}
+  .chip{
+    display:inline-flex; align-items:center; gap:8px; padding:8px 12px; border:1px solid var(--border);
+    border-radius:999px; background:rgba(255,255,255,.02)
+  }
+  .chip .x{font-weight:700; cursor:pointer; opacity:.7}
+  .muted{color:var(--muted)}
+  .section-title{font-weight:700; margin:4px 0 12px 0; font-size:1.05rem}
+  .grid{display:grid; gap:8px}
+  .grid.cols-2{grid-template-columns:1fr 1fr}
+  .grid.cols-3{grid-template-columns:repeat(3,1fr)}
+  @media (max-width:640px){ .grid.cols-3{grid-template-columns:1fr} }
+  table{width:100%; border-collapse:separate; border-spacing:0 8px}
+  th, td{padding:10px 12px; text-align:left}
+  thead th{color:var(--muted); font-weight:600; font-size:.9rem}
+  tbody tr{background:rgba(255,255,255,.02); border:1px solid var(--border)}
+  tbody tr td{border-top:1px solid var(--border); border-bottom:1px solid var(--border)}
+  tbody tr td:first-child{border-left:1px solid var(--border); border-top-left-radius:10px; border-bottom-left-radius:10px}
+  tbody tr td:last-child{border-right:1px solid var(--border); border-top-right-radius:10px; border-bottom-right-radius:10px}
+  .totals{display:grid; gap:8px; grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}
+  .card{
+    background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; box-shadow:var(--shadow);
+    display:flex; align-items:center; justify-content:space-between; gap:10px
+  }
+  .card.eliminated{opacity:.55}
+  .name{font-weight:700}
+  .pts{font-variant-numeric:tabular-nums; font-weight:800}
+  .tag{font-size:.75rem; color:var(--muted)}
+  .footer{display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between; align-items:center}
+  .link{color:var(--accent); text-decoration:none}
+  .rounds{max-height:260px; overflow:auto; border:1px dashed var(--border); border-radius:var(--radius-sm); padding:8px}
+  .round{
+    display:flex; gap:8px; align-items:center; justify-content:space-between; padding:8px 10px;
+    border-radius:10px; border:1px solid var(--border)
+  }
+  .round:hover{background:rgba(255,255,255,.03)}
+  .mini{font-size:.85rem}
+  .hidden{display:none !important}
+  .inline-input{width:90px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🃏 Marcador Chinchón</h1>
+    <div class="pill">Sin registro · Sin instalación</div>
+  </header>
+
+  <!-- Configuración inicial -->
+  <section id="setup" class="panel">
+    <div class="section-title">Nueva partida</div>
+    <div class="row">
+      <div class="grow">
+        <label class="tag" for="playerName">Añade jugadores</label>
+        <div class="row">
+          <input id="playerName" type="text" placeholder="Nombre del jugador" />
+          <button id="addPlayerBtn" aria-label="Añadir jugador">Añadir</button>
+        </div>
+        <div id="players" class="players-list" aria-live="polite"></div>
+      </div>
+      <div style="min-width:220px">
+        <label class="tag" for="limit">Límite de puntos (≥):</label>
+        <input id="limit" type="number" inputmode="numeric" min="10" step="5" value="100" />
+        <div class="muted mini" style="margin-top:6px">Cuando un jugador alcance o supere el límite, queda eliminado (opcional).</div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="startBtn" class="ok">Empezar partida</button>
+      <button id="loadBtn" class="ghost">Continuar última partida</button>
+      <button id="sampleBtn" class="ghost">Cargar ejemplo</button>
+    </div>
+  </section>
+
+  <!-- Marcador -->
+  <section id="board" class="panel hidden">
+    <div class="row" style="align-items:flex-end">
+      <div class="grow">
+        <div class="section-title">Ronda en curso</div>
+        <div id="inputs" class="grid cols-3"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="commitBtn">Cerrar ronda</button>
+          <button id="clearBtn" class="ghost">Limpiar</button>
+          <button id="undoBtn" class="ghost">Deshacer última ronda</button>
+        </div>
+      </div>
+      <div style="min-width:220px">
+        <label class="tag">Opciones</label>
+        <div class="row">
+          <button id="exportCsvBtn" class="ghost">Exportar CSV</button>
+          <button id="exportJsonBtn" class="ghost">Exportar JSON</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <input id="importFile" type="file" accept=".json" class="hidden">
+          <button id="importBtn" class="ghost">Importar JSON</button>
+          <button id="newGameBtn" class="warn">Nueva partida</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:8px">Clasificación</div>
+    <div id="totals" class="totals"></div>
+
+    <div class="section-title" style="margin-top:8px">Historial de rondas</div>
+    <div id="rounds" class="rounds"></div>
+  </section>
+
+  <footer class="footer muted mini">
+    <div>Consejo: toca una ronda del historial para <strong>editar</strong> sus puntuaciones.</div>
+    <div><a class="link" href="#" id="helpLink">¿Cómo se usa?</a></div>
+  </footer>
+</div>
+
+<!-- Modal de ayuda simple -->
+<dialog id="help">
+  <h3>Cómo usar el marcador</h3>
+  <ul>
+    <li>Añade jugadores y pulsa <em>Empezar partida</em>.</li>
+    <li>Escribe los puntos de cada jugador en la sección <em>Ronda en curso</em> y pulsa <em>Cerrar ronda</em>.</li>
+    <li>Los totales se actualizan automáticamente (menor puntuación = mejor).</li>
+    <li>Puedes <strong>deshacer</strong> la última ronda o <strong>tocar</strong> cualquier ronda del historial para editarla.</li>
+    <li>Usa <em>Exportar</em>/<em>Importar</em> para guardar/cargar partidas en archivo.</li>
+  </ul>
+  <form method="dialog">
+    <button>Cerrar</button>
+  </form>
+</dialog>
+
+<script>
+(function(){
+  const $ = sel => document.querySelector(sel);
+  const $$ = sel => Array.from(document.querySelectorAll(sel));
+
+  // --- Estado ---
+  let state = {
+    players: [],        // [{id, name, alive:true}]
+    limit: 100,
+    rounds: []          // [{id, scores:{playerId: number}, ts}]
+  };
+
+  const STORAGE_KEY = "chinchon_scoreboard_v1";
+
+  // --- Utilidades ---
+  const uid = () => Math.random().toString(36).slice(2, 9);
+  const fmt = (n) => Number.isFinite(n) ? n.toString() : "";
+  const nowIso = () => new Date().toISOString();
+  const clampInt = (v) => {
+    if (v === "" || v === null || v === undefined) return 0;
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const save = () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  };
+
+  const load = () => {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  };
+
+  const resetUI = () => {
+    $("#players").innerHTML = "";
+    $("#inputs").innerHTML = "";
+    $("#totals").innerHTML = "";
+    $("#rounds").innerHTML = "";
+  };
+
+  const renderPlayersChips = () => {
+    const wrap = $("#players");
+    wrap.innerHTML = "";
+    state.players.forEach(p => {
+      const chip = document.createElement("div");
+      chip.className = "chip";
+      chip.innerHTML = `<span>${escapeHtml(p.name)}</span> <span class="x" title="Quitar" aria-label="Quitar" role="button">×</span>`;
+      chip.querySelector(".x").onclick = () => {
+        state.players = state.players.filter(pp => pp.id !== p.id);
+        renderPlayersChips();
+      };
+      wrap.appendChild(chip);
+    });
+  };
+
+  const escapeHtml = (str) => str.replace(/[&<>"']/g, (m)=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;" }[m]));
+
+  const startGame = () => {
+    if (state.players.length < 2){
+      alert("Añade al menos 2 jugadores.");
+      return;
+    }
+    state.limit = Math.max(10, clampInt($("#limit").value));
+    save();
+    $("#setup").classList.add("hidden");
+    $("#board").classList.remove("hidden");
+    buildInputs();
+    renderAll();
+  };
+
+  const buildInputs = () => {
+    const box = $("#inputs");
+    box.innerHTML = "";
+    state.players.forEach((p, i) => {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `
+        <div class="grow">
+          <label class="tag">${escapeHtml(p.name)}</label>
+          <input type="number" inputmode="numeric" class="score-input" data-p="${p.id}" placeholder="Puntos de la ronda" />
+        </div>
+      `;
+      box.appendChild(row);
+    });
+  };
+
+  const currentTotals = () => {
+    const totals = Object.fromEntries(state.players.map(p => [p.id, 0]));
+    state.rounds.forEach(r => {
+      for (const pid in r.scores){
+        totals[pid] = (totals[pid] || 0) + clampInt(r.scores[pid]);
+      }
+    });
+    return totals;
+  };
+
+  const renderTotals = () => {
+    const totals = currentTotals();
+    const limit = state.limit;
+    const list = state.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      total: totals[p.id] || 0,
+      eliminated: (totals[p.id] || 0) >= limit
+    }));
+    list.sort((a,b)=> a.total - b.total);
+
+    const wrap = $("#totals");
+    wrap.innerHTML = "";
+    list.forEach((it, idx) => {
+      const card = document.createElement("div");
+      card.className = "card" + (it.eliminated ? " eliminated" : "");
+      card.innerHTML = `
+        <div>
+          <div class="name">${idx+1}. ${escapeHtml(it.name)}</div>
+          <div class="tag">${it.eliminated ? "Eliminado (≥ " + limit + ")" : "En juego"}</div>
+        </div>
+        <div class="pts">${it.total}</div>
+      `;
+      wrap.appendChild(card);
+    });
+  };
+
+  const renderRounds = () => {
+    const wrap = $("#rounds");
+    wrap.innerHTML = "";
+    if (state.rounds.length === 0){
+      const p = document.createElement("div");
+      p.className = "muted mini";
+      p.textContent = "No hay rondas todavía.";
+      wrap.appendChild(p);
+      return;
+    }
+    const totals = currentTotals();
+    state.rounds.forEach((r, idx) => {
+      const row = document.createElement("div");
+      row.className = "round";
+      const parts = state.players.map(p => `${p.name}: ${fmt(r.scores[p.id] ?? 0)}`);
+      const dt = new Date(r.ts);
+      row.innerHTML = `
+        <div>
+          <div><strong>Ronda ${idx+1}</strong> · <span class="muted mini">${dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
+          <div class="mini muted">${parts.map(escapeHtml).join(" · ")}</div>
+        </div>
+        <div class="row">
+          <button class="ghost mini" data-edit="${r.id}">Editar</button>
+          <button class="ghost mini" data-del="${r.id}">Borrar</button>
+        </div>
+      `;
+      wrap.appendChild(row);
+    });
+
+    // Attach handlers
+    $$("#rounds [data-edit]").forEach(btn => {
+      btn.addEventListener("click", () => editRound(btn.getAttribute("data-edit")));
+    });
+    $$("#rounds [data-del]").forEach(btn => {
+      btn.addEventListener("click", () => deleteRound(btn.getAttribute("data-del")));
+    });
+  };
+
+  const renderAll = () => {
+    renderTotals();
+    renderRounds();
+  };
+
+  const clearInputs = () => {
+    $$("#inputs .score-input").forEach(inp => inp.value = "");
+  };
+
+  const commitRound = () => {
+    // Build scores from inputs
+    const scores = {};
+    $$("#inputs .score-input").forEach(inp => {
+      const pid = inp.getAttribute("data-p");
+      scores[pid] = clampInt(inp.value);
+    });
+    // Avoid empty round
+    const allZero = Object.values(scores).every(v => clampInt(v) === 0);
+    if (allZero){
+      if(!confirm("Todos los valores son 0. ¿Cerrar la ronda igualmente?")) return;
+    }
+    state.rounds.push({id: uid(), scores, ts: nowIso()});
+    save();
+    clearInputs();
+    renderAll();
+  };
+
+  const undoRound = () => {
+    if (state.rounds.length === 0) return;
+    state.rounds.pop();
+    save();
+    renderAll();
+  };
+
+  const editRound = (id) => {
+    const r = state.rounds.find(rr => rr.id === id);
+    if (!r) return;
+    // Fill inputs with round values to edit
+    $$("#inputs .score-input").forEach(inp => {
+      const pid = inp.getAttribute("data-p");
+      inp.value = fmt(r.scores[pid] ?? 0);
+    });
+    // Replace commit by save edit
+    $("#commitBtn").classList.add("hidden");
+    $("#clearBtn").classList.add("hidden");
+    const saveBtn = document.createElement("button");
+    saveBtn.id = "saveEditBtn";
+    saveBtn.textContent = "Guardar edición";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.id = "cancelEditBtn";
+    cancelBtn.textContent = "Cancelar";
+    cancelBtn.className = "ghost";
+    $("#commitBtn").insertAdjacentElement("afterend", saveBtn);
+    saveBtn.insertAdjacentElement("afterend", cancelBtn);
+
+    const cleanup = () => {
+      $("#saveEditBtn")?.remove();
+      $("#cancelEditBtn")?.remove();
+      $("#commitBtn").classList.remove("hidden");
+      $("#clearBtn").classList.remove("hidden");
+      clearInputs();
+    };
+
+    saveBtn.onclick = () => {
+      const newScores = {};
+      $$("#inputs .score-input").forEach(inp => {
+        const pid = inp.getAttribute("data-p");
+        newScores[pid] = clampInt(inp.value);
+      });
+      r.scores = newScores;
+      r.ts = nowIso();
+      save();
+      cleanup();
+      renderAll();
+    };
+    cancelBtn.onclick = cleanup;
+  };
+
+  const deleteRound = (id) => {
+    if (!confirm("¿Borrar esta ronda?")) return;
+    state.rounds = state.rounds.filter(r => r.id !== id);
+    save();
+    renderAll();
+  };
+
+  const exportCSV = () => {
+    // CSV with header: Jugador, Ronda1, Ronda2, ..., Total
+    const roundsCount = state.rounds.length;
+    const headers = ["Jugador"];
+    for (let i=0;i<roundsCount;i++) headers.push(`Ronda ${i+1}`);
+    headers.push("Total");
+    let rows = [headers.join(",")];
+    const totals = currentTotals();
+    state.players.forEach(p => {
+      const rec = [csvEscape(p.name)];
+      for (let i=0;i<roundsCount;i++){
+        const r = state.rounds[i];
+        rec.push(csvEscape(fmt(r.scores[p.id] ?? 0)));
+      }
+      rec.push(csvEscape(fmt(totals[p.id] ?? 0)));
+      rows.push(rec.join(","));
+    });
+    download("chinchon_partida.csv", rows.join("\n"), "text/csv");
+  };
+
+  const csvEscape = (s) => {
+    const str = String(s ?? "");
+    if (/[",\n]/.test(str)){
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+  };
+
+  const exportJSON = () => {
+    const blob = JSON.stringify(state, null, 2);
+    download("chinchon_partida.json", blob, "application/json");
+  };
+
+  const download = (filename, content, type) => {
+    const blob = new Blob([content], {type});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>{
+      URL.revokeObjectURL(url);
+      a.remove();
+    }, 0);
+  };
+
+  const importJSON = (file) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const obj = JSON.parse(reader.result);
+        if (!Array.isArray(obj.players) || !Array.isArray(obj.rounds)) throw new Error("Estructura no válida");
+        state = {
+          players: obj.players.map(p => ({id: p.id || uid(), name: String(p.name || "").slice(0,40)})),
+          limit: clampInt(obj.limit) || 100,
+          rounds: Array.isArray(obj.rounds) ? obj.rounds.map(r => ({id: r.id || uid(), scores: r.scores || {}, ts: r.ts || nowIso()})) : []
+        };
+        save();
+        $("#setup").classList.add("hidden");
+        $("#board").classList.remove("hidden");
+        buildInputs();
+        renderAll();
+      }catch(e){
+        alert("No se pudo importar el archivo. " + e.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // --- Eventos UI ---
+  $("#addPlayerBtn").addEventListener("click", () => {
+    const name = ($("#playerName").value || "").trim();
+    if (!name) return;
+    if (state.players.some(p => p.name.toLowerCase() === name.toLowerCase())){
+      alert("Ese nombre ya está en la lista.");
+      return;
+    }
+    state.players.push({id: uid(), name, alive: true});
+    $("#playerName").value = "";
+    renderPlayersChips();
+  });
+
+  $("#playerName").addEventListener("keydown", (e)=>{
+    if (e.key === "Enter"){ $("#addPlayerBtn").click(); }
+  });
+
+  $("#startBtn").addEventListener("click", startGame);
+
+  $("#loadBtn").addEventListener("click", () => {
+    const s = load();
+    if (!s){ alert("No hay partida guardada en este dispositivo."); return; }
+    state = s;
+    $("#setup").classList.add("hidden");
+    $("#board").classList.remove("hidden");
+    buildInputs();
+    renderAll();
+  });
+
+  $("#sampleBtn").addEventListener("click", () => {
+    state.players = [
+      {id: uid(), name: "Ana"},
+      {id: uid(), name: "Luis"},
+      {id: uid(), name: "Marta"}
+    ];
+    renderPlayersChips();
+  });
+
+  $("#commitBtn").addEventListener("click", commitRound);
+  $("#clearBtn").addEventListener("click", clearInputs);
+  $("#undoBtn").addEventListener("click", undoRound);
+  $("#exportCsvBtn").addEventListener("click", exportCSV);
+  $("#exportJsonBtn").addEventListener("click", exportJSON);
+  $("#importBtn").addEventListener("click", ()=> $("#importFile").click());
+  $("#importFile").addEventListener("change", (e) => {
+    const file = e.target.files?.[0];
+    if (file) importJSON(file);
+    e.target.value = "";
+  });
+  $("#newGameBtn").addEventListener("click", () => {
+    if (!confirm("¿Empezar una partida nueva? Se borrará el progreso actual de este dispositivo.")) return;
+    state = {players:[], limit:100, rounds:[]};
+    save();
+    $("#board").classList.add("hidden");
+    $("#setup").classList.remove("hidden");
+    resetUI();
+    renderPlayersChips();
+  });
+
+  $("#helpLink").addEventListener("click", (e)=>{
+    e.preventDefault();
+    $("#help").showModal();
+  });
+
+  // Intento cargar estado por si el usuario recarga en medio de la partida
+  const existing = load();
+  if (existing && existing.players?.length){
+    state = existing;
+    $("#setup").classList.add("hidden");
+    $("#board").classList.remove("hidden");
+    buildInputs();
+    renderAll();
+  } else {
+    renderPlayersChips();
+  }
+})();
+</script>
+</body>
+</html>
